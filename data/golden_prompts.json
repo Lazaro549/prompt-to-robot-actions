@@ -1,0 +1,56 @@
+[
+  {
+    "id": "gp-001",
+    "prompt": "Pick the red cube and place it on the table",
+    "expected_tools": ["pick", "place"],
+    "expected_pick_object": "red_cube"
+  },
+  {
+    "id": "gp-002",
+    "prompt": "Grab the blue cube",
+    "expected_tools": ["pick"],
+    "expected_pick_object": "blue_cube"
+  },
+  {
+    "id": "gp-003",
+    "prompt": "Move to the charging station",
+    "expected_tools": ["move_to"]
+  },
+  {
+    "id": "gp-004",
+    "prompt": "Inspect the table with the camera",
+    "expected_tools": ["inspect"]
+  },
+  {
+    "id": "gp-005",
+    "prompt": "Navigate to the kitchen",
+    "expected_tools": ["navigate", "move_to"]
+  },
+  {
+    "id": "gp-006",
+    "prompt": "Wait for 3 seconds",
+    "expected_tools": ["wait"]
+  },
+  {
+    "id": "gp-007",
+    "prompt": "Pick the red cube",
+    "expected_tools": ["pick"],
+    "expected_pick_object": "red_cube"
+  },
+  {
+    "id": "gp-008",
+    "prompt": "Put the object at 0.4 0.0 0.1",
+    "expected_tools": ["place"]
+  },
+  {
+    "id": "gp-009",
+    "prompt": "Look at the current area",
+    "expected_tools": ["inspect"]
+  },
+  {
+    "id": "gp-010",
+    "prompt": "Go to coordinates and pick the blue cube",
+    "expected_tools": ["move_to", "pick"],
+    "expected_pick_object": "blue_cube"
+  }
+]
