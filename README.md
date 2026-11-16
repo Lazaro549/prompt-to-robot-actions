@@ -1,23 +1,41 @@
 # Prompt-to-Robot-Actions
 
-> Natural language → robot actions (sim, Gazebo, Nav2, MoveIt, vision).
+> Natural language → robot actions (Claude, Bedrock, Gazebo, Nav2, MoveIt, vision).
 
-**Pipeline:** Prompt → Plan / multi-turn Agent → Tools → Base + Arm + Vision → Logs
+[![CI](https://github.com/Lazaro549/prompt-to-robot-actions/actions/workflows/ci.yml/badge.svg)](https://github.com/Lazaro549/prompt-to-robot-actions/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**Pipeline:** Prompt → Plan / multi-turn Agent → validated tools → Base + Arm + Vision → logs + cost
+
+<!-- Demo: add docs/demo.gif when recorded — see docs/DEMO.md -->
 
 ---
 
-## Quick starts
+## Install
 
 ```bash
-pip install -r requirements.txt
-
-python -m examples.basic_pipeline
-python -m examples.claude_pipeline          # needs ANTHROPIC_API_KEY
-python -m examples.agent_loop_demo
-python -m examples.gazebo_agent_demo
-python -m examples.vision_agent_demo         # base + arm + vision (mock)
-python -m examples.vision_agent_demo --claude
+pip install -e ".[dev]"          # package + pytest
+# or: pip install -r requirements.txt
+export ANTHROPIC_API_KEY=...     # optional, for Claude
 ```
+
+## CLI
+
+```bash
+ptra run "Pick the red cube and place it on the table" --backend composite
+ptra run "Inspect the table" --planner claude --backend composite
+ptra logs
+ptra demo vision
+python tools/dashboard.py        # writes logs/dashboard.html
+```
+
+## Tests
+
+```bash
+pytest -q
+```
+
+Golden prompts: `data/golden_prompts.json`
 
 ---
 
@@ -25,46 +43,28 @@ python -m examples.vision_agent_demo --claude
 
 | Area | Status |
 |------|--------|
-| Claude / Bedrock tool calling | ✅ |
-| Multi-turn agent (replan on tool results) | ✅ |
-| Structured JSON logs (tokens, latency) | ✅ |
-| Gazebo ROS 2 backend | ✅ |
-| **Robot spawn launch** | ✅ `full_stack.launch.py` |
-| **Nav2 closed-loop nav** | ✅ params + launch flag |
-| **MoveIt 2 arm bridge** | ✅ mock + skeleton |
-| **Vision → agent feedback** | ✅ MockDetector + composite backend |
+| MIT License | ✅ |
+| Installable package (`pyproject.toml`) | ✅ |
+| Pytest + GitHub Actions CI | ✅ |
+| CLI `ptra` | ✅ |
+| Tool schema validation | ✅ |
+| Recovery / retry policies | ✅ |
+| Cost estimator (tokens → USD) | ✅ |
+| Run log dashboard | ✅ |
+| Claude / Bedrock planners | ✅ |
+| Multi-turn agent | ✅ |
+| Gazebo + Nav2 + MoveIt hooks | ✅ |
+| Vision feedback (mock + YOLO hook) | ✅ |
+| Example URDF | ✅ |
 
 ---
 
-## Full robotics stack
+## Docs
 
-Guides:
-- [docs/GAZEBO_ROS2.md](docs/GAZEBO_ROS2.md) — basic Gazebo bridge
-- [docs/FULL_STACK.md](docs/FULL_STACK.md) — **spawn, Nav2, MoveIt, vision**
-
-```bash
-# Gazebo + spawn + bridges (+ optional Nav2)
-ros2 launch prompt_to_robot_gazebo full_stack.launch.py
-ros2 launch prompt_to_robot_gazebo full_stack.launch.py use_nav2:=true
-```
-
-```python
-from src.backends.composite_backend import CompositeBackend
-from src.backends.gazebo_ros2 import MockGazeboBackend
-from src.backends.moveit_bridge import MockMoveItBackend
-from src.vision import MockDetector
-from src.agent import RobotAgent
-
-backend = CompositeBackend(
-    base=MockGazeboBackend(),
-    arm=MockMoveItBackend(),
-    detector=MockDetector(),
-)
-agent = RobotAgent(backend=backend)
-agent.run("Inspect the area, pick the red cube, place it at home")
-```
-
-Swap mocks for `GazeboROS2Backend`, `MoveItBackend`, `ROSCameraDetector` when the sim stack is up.
+- [docs/GAZEBO_ROS2.md](docs/GAZEBO_ROS2.md)
+- [docs/FULL_STACK.md](docs/FULL_STACK.md)
+- [docs/DEMO.md](docs/DEMO.md) — how to record a demo GIF
+- [TOPICS.md](TOPICS.md) — GitHub topics + make public
 
 ---
 
