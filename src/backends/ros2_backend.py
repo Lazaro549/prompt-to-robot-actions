@@ -13,7 +13,7 @@ talking to the simulator, a mock, or real ROS 2.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -128,7 +128,7 @@ class ROS2Backend:
             raise ImportError(
                 "rclpy is required for the real ROS2Backend. "
                 "Use MockROS2Backend for development without ROS 2."
-            ) from exp
+            ) from exc
 
         rclpy.init(args=None)
         self._node = Node(self.config.node_name)
@@ -143,7 +143,6 @@ class ROS2Backend:
         Replace the stubs below with real publish / call_async logic.
         """
         if tool_name == "move_to":
-            # publish PoseStamped or call a MoveTo service
             return {
                 "success": True,
                 "message": f"[ROS2] move_to published (stub) {arguments}",
@@ -185,6 +184,7 @@ class ROS2Backend:
             self._node.destroy_node()
             try:
                 import rclpy
+
                 rclpy.shutdown()
             except Exception:
                 pass
