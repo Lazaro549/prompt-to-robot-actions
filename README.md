@@ -9,45 +9,50 @@ This repository is a practical learning and experimentation space for connecting
 
 ---
 
-## Quick Start
+## Quick Start (fallback planner — no API key)
 
 ```bash
-# From the repository root
 python -m examples.basic_pipeline
 ```
 
-Example output:
+## Quick Start with Claude tool calling
 
-```text
-PROMPT: Pick the red cube and place it on the table
+```bash
+pip install anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
 
-PLAN:
-  1. pick({'object_id': 'red_cube', 'force': 0.6})
-  2. place({'x': 0.4, 'y': 0.0, 'z': 0.1})
-
-EXECUTION:
-  ✓ pick: Picked red_cube
-  ✓ place: Placed red_cube at (0.4, 0.0, 0.1)
-
-EVALUATION:
-  Plan succeeded (2/2 steps).
+python -m examples.claude_pipeline
 ```
+
+Claude will receive the robot tool schemas and return a sequence of `tool_use` blocks that become the plan.
+
+---
+
+## How Claude Tool Calling Works Here
+
+1. We send the user prompt + the `ROBOT_TOOLS` schemas to Claude.
+2. Claude responds with one or more `tool_use` blocks (e.g. `pick`, `place`).
+3. We convert those blocks into `PlanStep` objects.
+4. The `PlanExecutor` runs the steps against the simulator (or later ROS 2).
+5. The `Evaluator` reports success / failure.
+
+Important design choice: **Claude only plans**. It does not execute the tools itself. Execution is handled by our own code so we keep full control and can swap backends.
 
 ---
 
 ## Current Status
 
-| Component              | Status                          |
-|------------------------|---------------------------------|
-| Project structure      | ✅ Done                         |
-| Tool definitions       | ✅ Basic set (move, pick, place, inspect, navigate, wait) |
-| Fallback planner       | ✅ Keyword-based (for testing)  |
-| Simulator backend      | ✅ Working                      |
-| Plan executor          | ✅ Working                      |
-| Evaluator              | ✅ Basic success/failure report |
-| LLM planner (Claude/Bedrock) | ⏳ Next                       |
-| ROS 2 backend          | ⏳ Planned                      |
-| Cost & latency tracking| ⏳ Planned                      |
+| Component                    | Status                                      |
+|------------------------------|---------------------------------------------|
+| Project structure            | ✅ Done                                     |
+| Tool definitions             | ✅ move, pick, place, inspect, navigate, wait |
+| Fallback planner             | ✅ Keyword-based                            |
+| **Claude tool-calling planner** | ✅ Working                               |
+| Simulator backend            | ✅ Working                                  |
+| Plan executor                | ✅ Working                                  |
+| Evaluator                    | ✅ Basic success/failure report             |
+| ROS 2 backend                | ⏳ Planned                                  |
+| Cost & latency tracking      | ⏳ Planned                                  |
 
 ---
 
@@ -56,7 +61,8 @@ EVALUATION:
 ```text
 User Prompt
     ↓
-Planner (currently fallback, LLM coming next)
+Planner  ───  use_llm=False → fallback
+         └──  use_llm=True  → Claude tool calling
     ↓
 Structured Plan (list of PlanStep)
     ↓
@@ -74,31 +80,34 @@ Evaluator → EvaluationReport
 ```text
 prompt-to-robot-actions/
 ├── README.md
+├── requirements.txt
 ├── examples/
-│   └── basic_pipeline.py      # End-to-end runnable example
+│   ├── basic_pipeline.py       # Fallback planner
+│   └── claude_pipeline.py      # Claude tool calling
 ├── src/
 │   ├── planner/
-│   │   └── planner.py         # Planner + Plan / PlanStep
+│   │   ├── planner.py          # Main Planner + Plan / PlanStep
+│   │   └── claude_planner.py   # Claude implementation
 │   ├── tools/
-│   │   └── definitions.py     # ROBOT_TOOLS schemas
+│   │   └── definitions.py      # ROBOT_TOOLS schemas
 │   ├── executor/
-│   │   └── executor.py        # PlanExecutor
+│   │   └── executor.py
 │   ├── backends/
-│   │   └── simulator.py       # In-memory robot simulator
+│   │   └── simulator.py
 │   └── evaluation/
-│       └── evaluator.py       # EvaluationReport
+│       └── evaluator.py
 └── .gitignore
 ```
 
 ---
 
-## Next Steps (suggested order)
+## Next Steps (suggested)
 
-1. Replace the fallback planner with real Claude / Bedrock tool calling
-2. Add more realistic failure cases and recovery logic
-3. Add structured logging (JSON) of every plan + execution
-4. Create a ROS 2 backend adapter
-5. Track token usage and latency when using Bedrock
+1. Add structured JSON logging of every plan + execution
+2. Track token usage and latency from Claude
+3. Create a ROS 2 backend adapter
+4. Add recovery logic when a step fails
+5. Optional: multi-turn agent loop (Claude sees tool results and can replan)
 
 ---
 
