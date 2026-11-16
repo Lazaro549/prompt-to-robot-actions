@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -35,36 +35,44 @@ class Plan:
         }
 
 
+Provider = Literal["claude", "bedrock"]
+
+
 class Planner:
     """
     Converts a natural language prompt into a sequence of tool calls.
 
-    - use_llm=False → simple keyword fallback (no API key needed)
-    - use_llm=True  → Claude tool calling (requires ANTHROPIC_API_KEY)
+    - use_llm=False → keyword fallback (no API key)
+    - use_llm=True, provider="claude"  → Anthropic Claude tool calling
+    - use_llm=True, provider="bedrock" → Amazon Bedrock Converse API
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-5", use_llm: bool = False):
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-5",
+        use_llm: bool = False,
+        provider: Provider = "claude",
+    ):
         self.model = model
         self.use_llm = use_llm
+        self.provider = provider
 
     def plan(self, prompt: str) -> Plan:
-        """Generate a plan from a natural language prompt."""
         if self.use_llm:
             return self._plan_with_llm(prompt)
         return self._plan_fallback(prompt)
 
     def _plan_with_llm(self, prompt: str) -> Plan:
-        """Use Claude tool calling to generate the plan."""
+        if self.provider == "bedrock":
+            from src.planner.bedrock_planner import BedrockPlanner
+
+            return BedrockPlanner(model_id=self.model).plan(prompt)
+
         from src.planner.claude_planner import ClaudePlanner
 
-        claude = ClaudePlanner(model=self.model)
-        return claude.plan(prompt)
+        return ClaudePlanner(model=self.model).plan(prompt)
 
     def _plan_fallback(self, prompt: str) -> Plan:
-        """
-        Very simple keyword-based planner for early testing.
-        Only meant as a scaffold until the real LLM planner is ready.
-        """
         prompt_lower = prompt.lower()
         steps: list[PlanStep] = []
 
