@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any
-
-from src.tools.definitions import ROBOT_TOOLS
 
 
 @dataclass
@@ -42,11 +39,11 @@ class Planner:
     """
     Converts a natural language prompt into a sequence of tool calls.
 
-    Currently uses a simple rule-based fallback.
-    Later this will call Claude / Bedrock with the ROBOT_TOOLS schemas.
+    - use_llm=False → simple keyword fallback (no API key needed)
+    - use_llm=True  → Claude tool calling (requires ANTHROPIC_API_KEY)
     """
 
-    def __init__(self, model: str = "claude-sonnet", use_llm: bool = False):
+    def __init__(self, model: str = "claude-sonnet-4-5", use_llm: bool = False):
         self.model = model
         self.use_llm = use_llm
 
@@ -57,16 +54,11 @@ class Planner:
         return self._plan_fallback(prompt)
 
     def _plan_with_llm(self, prompt: str) -> Plan:
-        """
-        Placeholder for real LLM planning.
+        """Use Claude tool calling to generate the plan."""
+        from src.planner.claude_planner import ClaudePlanner
 
-        In the next iteration this will:
-        1. Send the prompt + ROBOT_TOOLS to Claude / Bedrock
-        2. Parse the tool-use response into PlanStep objects
-        """
-        raise NotImplementedError(
-            "LLM planning not yet implemented. Set use_llm=False for the fallback planner."
-        )
+        claude = ClaudePlanner(model=self.model)
+        return claude.plan(prompt)
 
     def _plan_fallback(self, prompt: str) -> Plan:
         """
@@ -77,7 +69,6 @@ class Planner:
         steps: list[PlanStep] = []
 
         if "pick" in prompt_lower or "grab" in prompt_lower:
-            # naive extraction
             object_id = "object_1"
             if "red" in prompt_lower:
                 object_id = "red_cube"
