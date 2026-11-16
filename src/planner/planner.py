@@ -18,7 +18,7 @@ class Plan:
     original_prompt: str
     steps: list[PlanStep] = field(default_factory=list)
     raw_llm_response: str | None = None
-    success: bool | None = None  # filled after evaluation
+    success: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -39,14 +39,6 @@ Provider = Literal["claude", "bedrock"]
 
 
 class Planner:
-    """
-    Converts a natural language prompt into a sequence of tool calls.
-
-    - use_llm=False → keyword fallback (no API key)
-    - use_llm=True, provider="claude"  → Anthropic Claude tool calling
-    - use_llm=True, provider="bedrock" → Amazon Bedrock Converse API
-    """
-
     def __init__(
         self,
         model: str = "claude-sonnet-4-5",
@@ -82,12 +74,11 @@ class Planner:
                 object_id = "red_cube"
             elif "blue" in prompt_lower:
                 object_id = "blue_cube"
-
             steps.append(
                 PlanStep(
                     tool_name="pick",
                     arguments={"object_id": object_id, "force": 0.6},
-                    reasoning="Detected pick intent in prompt",
+                    reasoning="Detected pick intent",
                 )
             )
 
@@ -100,7 +91,21 @@ class Planner:
                 )
             )
 
-        if "move" in prompt_lower or "go to" in prompt_lower:
+        if "navigate" in prompt_lower:
+            location = None
+            for name in ("kitchen", "table", "home", "charging_station"):
+                if name in prompt_lower:
+                    location = name
+                    break
+            args: dict[str, Any] = {"location": location} if location else {"x": 1.0, "y": 0.0}
+            steps.append(
+                PlanStep(
+                    tool_name="navigate",
+                    arguments=args,
+                    reasoning="Detected navigate intent",
+                )
+            )
+        elif "move" in prompt_lower or "go to" in prompt_lower:
             steps.append(
                 PlanStep(
                     tool_name="move_to",
@@ -118,12 +123,21 @@ class Planner:
                 )
             )
 
+        if "wait" in prompt_lower and not steps:
+            steps.append(
+                PlanStep(
+                    tool_name="wait",
+                    arguments={"seconds": 3.0},
+                    reasoning="Detected wait intent",
+                )
+            )
+
         if not steps:
             steps.append(
                 PlanStep(
                     tool_name="wait",
                     arguments={"seconds": 1.0},
-                    reasoning="No clear action detected — defaulting to wait",
+                    reasoning="No clear action detected",
                 )
             )
 
