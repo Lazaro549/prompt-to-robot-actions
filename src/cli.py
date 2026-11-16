@@ -1,10 +1,10 @@
 """
 Unified CLI for prompt-to-robot-actions.
 
-Usage:
-  ptra run "Pick the red cube" --backend simulator
-  ptra run "Inspect then pick red cube" --backend composite --planner claude
+  ptra run "Pick the red cube" --backend composite
+  ptra run "..." --dry-run
   ptra logs
+  ptra dashboard
   ptra demo vision
 """
 
@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def _build_backend(name: str):
@@ -40,9 +41,14 @@ def _build_backend(name: str):
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    from src.cost import estimate_cost
     from src.executor.executor import PlanExecutor
+    from src.executor.recovery import RecoveryPolicy
+    from src.logging.jsonl_stream import JsonlStream
     from src.logging.run_logger import RunLogger
     from src.planner.planner import Planner
+    from src.safety import SafetyGuard
+    from src.tools.validation import validate_tool_call
 
     backend = _build_backend(args.backend)
     use_llm = args.planner in ("claude", "bedrock")
@@ -54,22 +60,64 @@ def cmd_run(args: argparse.Namespace) -> int:
         model=args.model,
         log_dir=args.log_dir,
     )
+    stream = JsonlStream(Path(args.log_dir) / "events.jsonl") if args.jsonl else None
+    guard = SafetyGuard()
 
     planner = Planner(use_llm=use_llm, provider=provider, model=args.model)
     plan = planner.plan(args.prompt)
     print("PLAN:")
     for i, s in enumerate(plan.steps, 1):
         print(f"  {i}. {s.tool_name}({s.arguments})")
+        if stream:
+            stream.emit("plan_step", tool=s.tool_name, arguments=s.arguments)
 
     logger.mark_plan(plan.to_dict(), latency_ms=0)
-    result = PlanExecutor(backend, stop_on_failure=not args.continue_on_fail).run(plan)
+
+    if args.dry_run:
+        print("\nDRY-RUN: validating tools only (no execution)")
+        ok = True
+        for s in plan.steps:
+            try:
+                validate_tool_call(s.tool_name, s.arguments)
+                safe, err = guard.check(s.tool_name, s.arguments)
+                if not safe:
+                    print(f"  SAFETY FAIL {s.tool_name}: {err}")
+                    ok = False
+                else:
+                    print(f"  OK {s.tool_name}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  INVALID {s.tool_name}: {exc}")
+                ok = False
+        logger.add_extra(dry_run=True)
+        path = logger.save()
+        print(f"Log saved: {path}")
+        return 0 if ok else 1
+
+    recovery = RecoveryPolicy() if args.recovery else None
+    result = PlanExecutor(
+        backend,
+        stop_on_failure=not args.continue_on_fail,
+        recovery=recovery,
+    ).run(plan)
 
     print("\nEXECUTION:")
     for r in result.step_results:
         mark = "OK" if r.success else "FAIL"
         print(f"  [{mark}] {r.step.tool_name}: {r.output.get('message') or r.error}")
+        if stream:
+            stream.emit(
+                "step_result",
+                tool=r.step.tool_name,
+                success=r.success,
+                error=r.error,
+            )
 
     logger.mark_execution(result.to_dict(), latency_ms=0)
+
+    # Optional cost (0 tokens for fallback)
+    cost = estimate_cost(args.model, 0, 0)
+    logger.add_extra(total_cost_usd=cost.total_cost_usd)
+
     path = logger.save()
     print(f"\nLog saved: {path}")
     print(f"Success: {result.overall_success}")
@@ -95,6 +143,14 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from tools.dashboard import build_dashboard
+
+    path = build_dashboard(Path(args.log_dir), Path(args.log_dir) / "dashboard.html")
+    print(f"Dashboard: {path}")
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace) -> int:
     if args.name == "vision":
         from examples.vision_agent_demo import main as vision_main
@@ -106,6 +162,11 @@ def cmd_demo(args: argparse.Namespace) -> int:
         from examples.basic_pipeline import main as basic_main
 
         basic_main()
+        return 0
+    if args.name == "recovery":
+        from examples.recovery_demo import main as recovery_main
+
+        recovery_main()
         return 0
     print(f"Unknown demo: {args.name}")
     return 1
@@ -130,6 +191,9 @@ def main(argv: list[str] | None = None) -> None:
     run_p.add_argument("--model", default="claude-sonnet-4-5")
     run_p.add_argument("--log-dir", default="logs")
     run_p.add_argument("--continue-on-fail", action="store_true")
+    run_p.add_argument("--dry-run", action="store_true", help="Plan + validate only")
+    run_p.add_argument("--recovery", action="store_true", help="Enable recovery policy")
+    run_p.add_argument("--jsonl", action="store_true", help="Stream events to logs/events.jsonl")
     run_p.set_defaults(func=cmd_run)
 
     logs_p = sub.add_parser("logs", help="List recent run logs")
@@ -137,8 +201,12 @@ def main(argv: list[str] | None = None) -> None:
     logs_p.add_argument("--limit", type=int, default=10)
     logs_p.set_defaults(func=cmd_logs)
 
+    dash_p = sub.add_parser("dashboard", help="Build HTML dashboard from logs")
+    dash_p.add_argument("--log-dir", default="logs")
+    dash_p.set_defaults(func=cmd_dashboard)
+
     demo_p = sub.add_parser("demo", help="Run a built-in demo")
-    demo_p.add_argument("name", choices=["basic", "vision"])
+    demo_p.add_argument("name", choices=["basic", "vision", "recovery"])
     demo_p.set_defaults(func=cmd_demo)
 
     args = parser.parse_args(argv)
