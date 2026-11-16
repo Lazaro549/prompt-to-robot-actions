@@ -3,9 +3,9 @@
 > Framework that turns natural language prompts into robot actions.
 
 **Pipeline:**  
-`Prompt → Planning → Tool Calls → Execution (sim / ROS 2) → Evaluation + Logging`
+`Prompt → Planning → Tool Calls → Execution (sim / ROS 2 / Gazebo) → Evaluation + Logging`
 
-Supports **Claude** (Anthropic API), **Amazon Bedrock**, a **multi-turn agent loop**, structured **JSON logging**, and a **ROS 2 backend** (mock + skeleton).
+Supports **Claude**, **Amazon Bedrock**, a **multi-turn agent loop**, structured **JSON logging**, and **ROS 2 + Gazebo** backends.
 
 ---
 
@@ -14,7 +14,7 @@ Supports **Claude** (Anthropic API), **Amazon Bedrock**, a **multi-turn agent lo
 ```bash
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...   # for Claude
-# AWS credentials required for Bedrock (env / profile / IAM role)
+# AWS credentials required for Bedrock
 ```
 
 ---
@@ -22,18 +22,21 @@ export ANTHROPIC_API_KEY=sk-ant-...   # for Claude
 ## Quick starts
 
 ```bash
-# 1. Fallback planner (no API key)
+# Fallback (no API key)
 python -m examples.basic_pipeline
 
-# 2. Claude tool calling (one-shot plan)
+# Claude one-shot plan
 python -m examples.claude_pipeline
 
-# 3. Full pipeline + structured JSON logs
-python -m examples.full_pipeline_with_logging
+# Full pipeline + JSON logs
 python -m examples.full_pipeline_with_logging --claude
 
-# 4. Multi-turn agent (Claude sees tool results and can replan)
+# Multi-turn agent
 python -m examples.agent_loop_demo
+
+# Gazebo-oriented demo (mock, no ROS needed)
+python -m examples.gazebo_agent_demo
+python -m examples.gazebo_agent_demo --claude
 ```
 
 ---
@@ -43,111 +46,73 @@ python -m examples.agent_loop_demo
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Tool definitions | ✅ | move, pick, place, inspect, navigate, wait |
-| Fallback planner | ✅ | Keyword-based, no API key |
-| Claude tool calling | ✅ | `src/planner/claude_planner.py` |
-| Amazon Bedrock planner | ✅ | `src/planner/bedrock_planner.py` (Converse API) |
-| Multi-turn agent loop | ✅ | Claude executes → sees result → replans |
-| Simulator backend | ✅ | In-memory state |
-| ROS 2 backend | ✅ | `MockROS2Backend` + real skeleton |
-| Structured JSON logging | ✅ | Tokens, latency, plan, execution |
-| Evaluator | ✅ | Success / failure report |
+| Fallback / Claude / Bedrock planners | ✅ | |
+| Multi-turn agent loop | ✅ | Replans from tool results |
+| Simulator backend | ✅ | In-memory |
+| ROS 2 backend | ✅ | Mock + skeleton |
+| **Gazebo + ROS 2 backend** | ✅ | Mock + real `GazeboROS2Backend` |
+| Structured JSON logging | ✅ | Tokens + latency |
+| ROS 2 launch package | ✅ | `ros2_ws/src/prompt_to_robot_gazebo` |
+
+---
+
+## ROS 2 + Gazebo
+
+Full guide: **[docs/GAZEBO_ROS2.md](docs/GAZEBO_ROS2.md)**
+
+**Without Gazebo (develop first):**
+```bash
+python -m examples.gazebo_agent_demo
+```
+
+**With Gazebo:**
+```bash
+# Terminal 1 — simulation
+cd ros2_ws && colcon build --packages-select prompt_to_robot_gazebo
+source install/setup.bash
+ros2 launch prompt_to_robot_gazebo gazebo_sim.launch.py
+
+# Terminal 2 — agent (after sourcing ROS 2)
+# Use GazeboROS2Backend instead of MockGazeboBackend
+```
+
+Tool mapping:
+- `navigate` → `/goal_pose` (Nav2-compatible)
+- `move_to` → `/cmd_vel` (open-loop; swap for MoveIt on arms)
+- `pick` / `place` → gripper stubs (wire to your robot)
+- `inspect` → camera topic (optional)
 
 ---
 
 ## Architecture
 
 ```text
-                    ┌── one-shot plan ─────────────────┐
-User Prompt ───────┤  Claude  /  Bedrock  /  fallback   ├─── Plan
-                    └── multi-turn agent loop ─────────┘
-                                                      │
-                                                      ▼
-                                               PlanExecutor
-                                                      │
-                         ┌────────────────┼───────────────┐
-                         ▼              ▼              ▼
-                   Simulator      MockROS2Backend   ROS2Backend
-                         │
-                         ▼
-                   Evaluator + RunLogger (JSON)
+Prompt → Planner (Claude | Bedrock | fallback) or multi-turn Agent
+                ↓
+          PlanExecutor
+                ↓
+    Simulator | MockGazebo | GazeboROS2 | ROS2Backend
+                ↓
+       Evaluator + RunLogger (JSON)
 ```
 
 ---
 
-## Project structure
+## Project structure (high level)
 
 ```text
-src/
-├── planner/
-│   ├── planner.py           # Unified entry (fallback / claude / bedrock)
-│   ├── claude_planner.py    # Anthropic tool use
-│   └── bedrock_planner.py   # Bedrock Converse + toolConfig
-├── agent/
-│   └── agent_loop.py        # Multi-turn Claude agent
-├── tools/
-│   └── definitions.py
-├── executor/
-│   └── executor.py
-├── backends/
-│   ├── simulator.py
-│   └── ros2_backend.py      # Mock + real skeleton
-├── evaluation/
-│   └── evaluator.py
-└── logging/
-    └── run_logger.py         # Structured JSON logs
+src/backends/
+  simulator.py
+  ros2_backend.py
+  gazebo_ros2.py          # MockGazeboBackend + GazeboROS2Backend
 
-examples/
-├── basic_pipeline.py
-├── claude_pipeline.py
-├── full_pipeline_with_logging.py
-└── agent_loop_demo.py
+ros2_ws/src/prompt_to_robot_gazebo/
+  launch/gazebo_sim.launch.py
+  config/bridge.yaml
+
+examples/gazebo_agent_demo.py
+docs/GAZEBO_ROS2.md
 ```
-
----
-
-## Usage snippets
-
-**One-shot Claude plan**
-```python
-from src.planner.planner import Planner
-plan = Planner(use_llm=True, provider="claude").plan("Pick the red cube")
-```
-
-**Bedrock plan**
-```python
-plan = Planner(
-    use_llm=True,
-    provider="bedrock",
-    model="anthropic.claude-3-5-sonnet-20241022-v2:0",
-).plan("Pick the red cube")
-```
-
-**Multi-turn agent**
-```python
-from src.agent import RobotAgent
-from src.backends.simulator import SimulatorBackend
-
-agent = RobotAgent(backend=SimulatorBackend())
-result = agent.run("Pick the red cube. If it fails, try blue.")
-```
-
-**ROS 2 mock**
-```python
-from src.backends.ros2_backend import MockROS2Backend
-backend = MockROS2Backend()
-```
-
----
-
-## Logs
-
-Every run that uses `RunLogger` writes a JSON file under `logs/` with:
-
-- plan steps
-- execution results
-- evaluation summary
-- token counts (when available)
-- latency (planning / execution / total)
 
 ---
 
@@ -155,5 +120,3 @@ Every run that uses `RunLogger` writes a JSON file under `logs/` with:
 
 **Lazaro Gomez Vitolo** ([Lazaro549](https://github.com/Lazaro549))  
 Junior AI & Robotics Developer · Mar del Plata, Argentina
-
-Related: [aws-bedrock-robotics-demo](https://github.com/Lazaro549/aws-bedrock-robotics-demo) · [robot-vision-dashboard](https://github.com/Lazaro549/robot-vision-dashboard) · [ai-engineering-lab](https://github.com/Lazaro549/ai-engineering-lab)
