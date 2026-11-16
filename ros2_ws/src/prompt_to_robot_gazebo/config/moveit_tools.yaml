@@ -1,0 +1,36 @@
+# MoveIt 2 integration notes for prompt-to-robot-actions
+#
+# This file documents how high-level tools map to MoveIt interfaces.
+# Load your robot's MoveIt config package (generated with MoveIt Setup Assistant)
+# and point the backend at the correct action/service names.
+
+moveit:
+  # Typical action server for motion planning
+  move_group_action: "/move_action"
+  # Or use moveit_msgs/MoveGroup action via moveit_commander / moveit_py
+
+  planning_group: "arm"          # change to your SRDF group name
+  gripper_group: "gripper"
+
+  # Named poses defined in the SRDF (optional)
+  named_poses:
+    home: "home"
+    ready: "ready"
+    pre_pick: "pre_pick"
+
+  # Tool mapping
+  tools:
+    move_to:
+      # Cartesian or joint-space goal to MoveIt
+      interface: "move_group"
+      frame_id: "base_link"
+    pick:
+      # Sequence: pre-grasp → approach → close gripper → retreat
+      interface: "move_group + gripper_action"
+      gripper_action: "/gripper_controller/gripper_cmd"
+    place:
+      interface: "move_group + gripper_action"
+      gripper_open: true
+
+# Python side: see src/backends/moveit_bridge.py
+# Requires: moveit_py or moveit_commander in the ROS 2 environment.
