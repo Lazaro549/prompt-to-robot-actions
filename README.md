@@ -5,83 +5,100 @@
 **Pipeline:**  
 `Prompt → Planning → Tool Calls → Execution (simulated or real) → Success Evaluation`
 
-This repository is designed as a practical learning and experimentation space for connecting Large Language Models (Claude / Amazon Bedrock) with robotic systems (simulated or physical).
+This repository is a practical learning and experimentation space for connecting Large Language Models (Claude / Amazon Bedrock) with robotic systems (simulated or physical).
 
 ---
 
-## Goals
+## Quick Start
 
-- Convert natural language instructions into structured robot plans
-- Use tool calling / function calling to map high-level goals to low-level actions
-- Support both **simulated** and **real** robot backends
-- Evaluate whether the plan succeeded (success rate, recovery, safety constraints)
-- Keep the architecture simple, readable and measurable
+```bash
+# From the repository root
+python -m examples.basic_pipeline
+```
+
+Example output:
+
+```text
+PROMPT: Pick the red cube and place it on the table
+
+PLAN:
+  1. pick({'object_id': 'red_cube', 'force': 0.6})
+  2. place({'x': 0.4, 'y': 0.0, 'z': 0.1})
+
+EXECUTION:
+  ✓ pick: Picked red_cube
+  ✓ place: Placed red_cube at (0.4, 0.0, 0.1)
+
+EVALUATION:
+  Plan succeeded (2/2 steps).
+```
 
 ---
 
-## High-level Architecture
+## Current Status
+
+| Component              | Status                          |
+|------------------------|---------------------------------|
+| Project structure      | ✅ Done                         |
+| Tool definitions       | ✅ Basic set (move, pick, place, inspect, navigate, wait) |
+| Fallback planner       | ✅ Keyword-based (for testing)  |
+| Simulator backend      | ✅ Working                      |
+| Plan executor          | ✅ Working                      |
+| Evaluator              | ✅ Basic success/failure report |
+| LLM planner (Claude/Bedrock) | ⏳ Next                       |
+| ROS 2 backend          | ⏳ Planned                      |
+| Cost & latency tracking| ⏳ Planned                      |
+
+---
+
+## Architecture
 
 ```text
 User Prompt
     ↓
-Planner (LLM)
+Planner (currently fallback, LLM coming next)
     ↓
-Structured Plan (JSON / sequence of tools)
+Structured Plan (list of PlanStep)
     ↓
-Tool Executor
+PlanExecutor
     ↓
-Robot Backend (Simulator | Real Hardware | ROS 2)
+Robot Backend (SimulatorBackend for now)
     ↓
-Evaluation & Logging
+Evaluator → EvaluationReport
 ```
 
 ---
 
-## Planned Features
-
-- [x] Project structure & documentation
-- [ ] Prompt → structured plan (using Claude / Bedrock)
-- [ ] Tool definitions for common robot actions (move, pick, place, inspect, navigate…)
-- [ ] Simple simulator backend
-- [ ] Evaluation metrics (success, partial success, failure reason)
-- [ ] Logging of plans, tool calls and outcomes
-- [ ] Optional ROS 2 bridge
-- [ ] Cost & latency tracking (especially for Bedrock)
-
----
-
-## Project Structure (initial)
+## Project Structure
 
 ```text
 prompt-to-robot-actions/
 ├── README.md
-├── src/
-│   ├── planner/          # LLM planning logic
-│   ├── tools/            # Tool definitions
-│   ├── executor/         # Executes the plan
-│   ├── backends/         # Simulator / ROS / hardware adapters
-│   └── evaluation/       # Success metrics & logging
 ├── examples/
-├── tests/
-└── docs/
+│   └── basic_pipeline.py      # End-to-end runnable example
+├── src/
+│   ├── planner/
+│   │   └── planner.py         # Planner + Plan / PlanStep
+│   ├── tools/
+│   │   └── definitions.py     # ROBOT_TOOLS schemas
+│   ├── executor/
+│   │   └── executor.py        # PlanExecutor
+│   ├── backends/
+│   │   └── simulator.py       # In-memory robot simulator
+│   └── evaluation/
+│       └── evaluator.py       # EvaluationReport
+└── .gitignore
 ```
 
 ---
 
-## Tech Stack (intended)
+## Next Steps (suggested order)
 
-- **Language:** Python 3.11+
-- **LLM:** Anthropic Claude / Amazon Bedrock
-- **Robot interface:** Custom simulator first, then ROS 2
-- **Evaluation:** Simple structured logs + success criteria
-- **Optional:** FastAPI for a small control API
-
----
-
-## Status
-
-**Private learning repository** — early stage.  
-Focused on clean architecture and measurable experiments rather than production readiness.
+1. Replace the fallback planner with real Claude / Bedrock tool calling
+2. Add more realistic failure cases and recovery logic
+3. Add structured logging (JSON) of every plan + execution
+4. Create a ROS 2 backend adapter
+5. Track token usage and latency when using Bedrock
 
 ---
 
