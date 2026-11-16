@@ -1,0 +1,38 @@
+planner:
+  provider: fallback   # fallback | claude | bedrock
+  model: claude-sonnet-4-5
+  use_llm: false
+
+backend:
+  type: composite      # simulator | mock-gazebo | composite
+
+execution:
+  stop_on_failure: true
+  validate_tools: true
+  dry_run: false
+
+recovery:
+  enabled: true
+  max_retries: 1
+  on_pick_failure: alternate_object
+  alternate_objects:
+    - blue_cube
+    - object_1
+
+safety:
+  allowed_tools:
+    - move_to
+    - pick
+    - place
+    - inspect
+    - navigate
+    - wait
+  forbidden_zones: []   # e.g. [{x_min: -1, x_max: -0.5, y_min: 0, y_max: 1}]
+
+logging:
+  dir: logs
+  jsonl_stream: true
+  estimate_cost: true
+
+cost:
+  model_pricing: default
