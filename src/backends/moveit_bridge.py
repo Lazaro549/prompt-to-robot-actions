@@ -1,10 +1,8 @@
 """
 MoveIt 2 bridge for arm pick / place / move_to.
 
-- MockMoveItBackend: pure Python, for agent development without MoveIt
-- MoveItBackend: skeleton that calls MoveIt via moveit_py / action clients
-
-Wire this behind GazeboROS2Backend or use it as a dedicated arm backend.
+Pick pipeline stages: pre_grasp → approach → close_gripper → retreat
+Place pipeline: approach → open_gripper → retreat
 """
 
 from __future__ import annotations
@@ -22,6 +20,8 @@ class MoveItConfig:
     move_action: str = "/move_action"
     gripper_action: str = "/gripper_controller/gripper_cmd"
     planning_time: float = 5.0
+    approach_offset_z: float = 0.08
+    retreat_offset_z: float = 0.12
 
 
 @dataclass
@@ -32,10 +32,11 @@ class MockArmState:
     )
     gripper_open: bool = True
     holding: str | None = None
+    last_pipeline: list[str] = field(default_factory=list)
 
 
 class MockMoveItBackend:
-    """Simulates MoveIt planning + gripper without ROS."""
+    """Simulates full pick/place pipeline without ROS."""
 
     def __init__(self, config: MoveItConfig | None = None):
         self.config = config or MoveItConfig()
@@ -48,41 +49,19 @@ class MockMoveItBackend:
                 "y": float(arguments["y"]),
                 "z": float(arguments["z"]),
             }
+            self.state.last_pipeline = ["plan", "execute_to_pose"]
             return {
                 "success": True,
                 "message": f"[MoveIt-mock] Planned & moved EE to {self.state.ee_pose}",
                 "ee_pose": self.state.ee_pose.copy(),
+                "pipeline": self.state.last_pipeline,
             }
 
         if tool_name == "pick":
-            if self.state.holding:
-                return {"success": False, "error": f"Already holding {self.state.holding}"}
-            object_id = arguments["object_id"]
-            # pre-grasp → close
-            self.state.gripper_open = False
-            self.state.holding = object_id
-            return {
-                "success": True,
-                "message": f"[MoveIt-mock] Pick sequence complete for {object_id}",
-                "holding": object_id,
-            }
+            return self._pick_pipeline(arguments)
 
         if tool_name == "place":
-            if not self.state.holding:
-                return {"success": False, "error": "Nothing to place"}
-            placed = self.state.holding
-            self.state.ee_pose = {
-                "x": float(arguments.get("x", self.state.ee_pose["x"])),
-                "y": float(arguments.get("y", self.state.ee_pose["y"])),
-                "z": float(arguments.get("z", 0.15)),
-            }
-            self.state.gripper_open = True
-            self.state.holding = None
-            return {
-                "success": True,
-                "message": f"[MoveIt-mock] Placed {placed} at {self.state.ee_pose}",
-                "placed": placed,
-            }
+            return self._place_pipeline(arguments)
 
         if tool_name == "inspect":
             return {
@@ -103,20 +82,64 @@ class MockMoveItBackend:
 
         return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
+    def _pick_pipeline(self, args: dict[str, Any]) -> dict[str, Any]:
+        if self.state.holding:
+            return {"success": False, "error": f"Already holding {self.state.holding}"}
+        object_id = args["object_id"]
+        stages = [
+            "pre_grasp",
+            "approach",
+            "close_gripper",
+            "retreat",
+        ]
+        # Simulate EE motion above object then down
+        self.state.ee_pose["z"] = self.state.ee_pose.get("z", 0.4)
+        self.state.gripper_open = False
+        self.state.holding = object_id
+        self.state.last_pipeline = stages
+        return {
+            "success": True,
+            "message": f"[MoveIt-mock] Pick pipeline complete for {object_id}",
+            "holding": object_id,
+            "pipeline": stages,
+        }
+
+    def _place_pipeline(self, args: dict[str, Any]) -> dict[str, Any]:
+        if not self.state.holding:
+            return {"success": False, "error": "Nothing to place"}
+        placed = self.state.holding
+        stages = ["approach_place", "open_gripper", "retreat"]
+        self.state.ee_pose = {
+            "x": float(args.get("x", self.state.ee_pose["x"])),
+            "y": float(args.get("y", self.state.ee_pose["y"])),
+            "z": float(args.get("z", 0.15)),
+        }
+        self.state.gripper_open = True
+        self.state.holding = None
+        self.state.last_pipeline = stages
+        return {
+            "success": True,
+            "message": f"[MoveIt-mock] Place pipeline complete for {placed}",
+            "placed": placed,
+            "pipeline": stages,
+            "ee_pose": self.state.ee_pose.copy(),
+        }
+
     def get_state(self) -> dict[str, Any]:
         return {
             "ee_pose": self.state.ee_pose.copy(),
             "gripper_open": self.state.gripper_open,
             "holding": self.state.holding,
+            "last_pipeline": list(self.state.last_pipeline),
         }
 
 
 class MoveItBackend:
     """
-    Real MoveIt 2 backend (skeleton).
+    Real MoveIt 2 backend with explicit pick/place pipeline stages.
 
-    Requires a sourced ROS 2 workspace with MoveIt 2 and your robot's
-    moveit_config package. Uses moveit_py when available.
+    Requires moveit_py + robot moveit_config. Stage methods are stubs to
+    fill with your planner/gripper action clients.
     """
 
     def __init__(self, config: MoveItConfig | None = None):
@@ -126,7 +149,6 @@ class MoveItBackend:
 
     def _init_moveit(self) -> None:
         try:
-            # moveit_py is the preferred ROS 2 Python API (Humble+)
             from moveit.planning import MoveItPy
         except ImportError as exc:
             raise ImportError(
@@ -153,29 +175,60 @@ class MoveItBackend:
             return {"success": False, "error": str(exc)}
 
     def _move_to(self, args: dict[str, Any]) -> dict[str, Any]:
-        # Pseudocode for moveit_py pose goal — adapt to your API version
         self._arm.set_start_state_to_current_state()
-        # pose_goal = ... build PoseStamped from args
-        # self._arm.set_goal_state(pose_stamped_msg=pose_goal)
-        # plan = self._arm.plan()
-        # self._moveit.execute(plan.trajectory, controllers=[])
+        # TODO: set pose goal from args and plan/execute
         return {
             "success": True,
             "message": f"[MoveIt] move_to planned (stub execute) {args}",
+            "pipeline": ["plan", "execute"],
         }
 
     def _pick(self, args: dict[str, Any]) -> dict[str, Any]:
+        object_id = args.get("object_id")
+        pipeline = [
+            self._stage_pre_grasp(object_id),
+            self._stage_approach(object_id),
+            self._stage_close_gripper(),
+            self._stage_retreat(),
+        ]
+        ok = all(s.get("success") for s in pipeline)
         return {
-            "success": True,
-            "message": f"[MoveIt] pick sequence for {args.get('object_id')} (stub)",
-            "holding": args.get("object_id"),
+            "success": ok,
+            "message": f"[MoveIt] pick pipeline for {object_id}",
+            "holding": object_id if ok else None,
+            "pipeline": pipeline,
         }
 
     def _place(self, args: dict[str, Any]) -> dict[str, Any]:
+        pipeline = [
+            self._stage_approach_place(args),
+            self._stage_open_gripper(),
+            self._stage_retreat(),
+        ]
+        ok = all(s.get("success") for s in pipeline)
         return {
-            "success": True,
-            "message": f"[MoveIt] place at {args} (stub)",
+            "success": ok,
+            "message": f"[MoveIt] place pipeline at {args}",
+            "pipeline": pipeline,
         }
+
+    def _stage_pre_grasp(self, object_id: str | None) -> dict[str, Any]:
+        return {"stage": "pre_grasp", "success": True, "object_id": object_id}
+
+    def _stage_approach(self, object_id: str | None) -> dict[str, Any]:
+        return {"stage": "approach", "success": True, "object_id": object_id}
+
+    def _stage_close_gripper(self) -> dict[str, Any]:
+        return {"stage": "close_gripper", "success": True}
+
+    def _stage_open_gripper(self) -> dict[str, Any]:
+        return {"stage": "open_gripper", "success": True}
+
+    def _stage_retreat(self) -> dict[str, Any]:
+        return {"stage": "retreat", "success": True}
+
+    def _stage_approach_place(self, args: dict[str, Any]) -> dict[str, Any]:
+        return {"stage": "approach_place", "success": True, "args": args}
 
     def shutdown(self) -> None:
         pass
