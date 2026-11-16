@@ -38,7 +38,6 @@ def validate_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
 
     for key, value in arguments.items():
         if key not in props:
-            # Allow unknown keys but do not pass them through by default
             continue
         cleaned[key] = _coerce(key, value, props[key])
 
@@ -55,7 +54,7 @@ def _coerce(key: str, value: Any, prop: dict[str, Any]) -> Any:
         try:
             num = float(value)
         except (TypeError, ValueError) as exc:
-            raise ValidationError(f"'{key}' must be a number") from exp
+            raise ValidationError(f"'{key}' must be a number") from exc
         if "minimum" in prop and num < prop["minimum"]:
             raise ValidationError(f"'{key}' must be >= {prop['minimum']}")
         return num
@@ -70,5 +69,5 @@ def _coerce(key: str, value: Any, prop: dict[str, Any]) -> Any:
         try:
             return int(value)
         except (TypeError, ValueError) as exc:
-            raise ValidationError(f"'{key}' must be an integer") from exp
+            raise ValidationError(f"'{key}' must be an integer") from exc
     return value
