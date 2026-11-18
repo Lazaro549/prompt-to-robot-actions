@@ -78,6 +78,19 @@ Docs: [FULL_STACK](docs/FULL_STACK.md) · [GAZEBO](docs/GAZEBO_ROS2.md) · [DEMO
 
 ---
 
+## 💸 Donations
+
+If this project helps you, you can support it with a donation:
+
+| | |
+|---|---|
+| 🇦🇷 **ARS (Argentina)** | Alias: `lazaro.503.alaba.mp` |
+| 🌎 **USD** (local transfers within Argentina only) | Alias: `ahogada.duras.foca` |
+
+Thank you!
+
+---
+
 ## Author
 
 **Lazaro Gomez Vitolo** ([Lazaro549](https://github.com/Lazaro549))  
